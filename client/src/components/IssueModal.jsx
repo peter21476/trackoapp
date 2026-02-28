@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 import ImageLightbox from './ImageLightbox';
 
 const STATUSES = [
@@ -17,6 +18,7 @@ const PRIORITIES = [
 ];
 
 export default function IssueModal({ issue, members, onSave, onDelete, onClose, defaultStatus }) {
+  const { user } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('issue');
@@ -26,7 +28,13 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentBody, setEditingCommentBody] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
   const fileInputRef = useRef(null);
+  const commentsEndRef = useRef(null);
 
   useEffect(() => {
     if (issue) {
@@ -132,6 +140,57 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
   }, [uploadBlob]);
+
+  // Load comments when editing an existing issue
+  useEffect(() => {
+    if (issue?.id) {
+      api.get(`/comments/issue/${issue.id}`).then((res) => setComments(res.data)).catch(() => {});
+    }
+  }, [issue]);
+
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+    if (!newComment.trim() || !issue?.id) return;
+    setSubmittingComment(true);
+    try {
+      const res = await api.post('/comments', { issue_id: issue.id, body: newComment });
+      setComments((prev) => [...prev, res.data]);
+      setNewComment('');
+      setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    } catch {
+      alert('Failed to add comment');
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const handleUpdateComment = async (id) => {
+    if (!editingCommentBody.trim()) return;
+    try {
+      const res = await api.put(`/comments/${id}`, { body: editingCommentBody });
+      setComments((prev) => prev.map((c) => (c.id === id ? res.data : c)));
+      setEditingCommentId(null);
+      setEditingCommentBody('');
+    } catch {
+      alert('Failed to update comment');
+    }
+  };
+
+  const handleDeleteComment = async (id) => {
+    if (!window.confirm('Delete this comment?')) return;
+    try {
+      await api.delete(`/comments/${id}`);
+      setComments((prev) => prev.filter((c) => c.id !== id));
+    } catch {
+      alert('Failed to delete comment');
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' at ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  };
 
   const handleRemoveScreenshot = async (index) => {
     const shot = screenshots[index];
@@ -288,6 +347,83 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
             </button>
           </div>
         </form>
+        {issue && (
+          <div className="comments-section">
+            <h3 className="comments-title">Comments ({comments.length})</h3>
+            <div className="comments-list">
+              {comments.length === 0 && (
+                <p className="comments-empty">No comments yet. Be the first to comment.</p>
+              )}
+              {comments.map((comment) => (
+                <div key={comment.id} className="comment">
+                  <div className="comment-avatar" style={{ background: comment.user_color || '#6366f1' }}>
+                    {comment.user_name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="comment-body">
+                    <div className="comment-header">
+                      <span className="comment-author">{comment.user_name}</span>
+                      <span className="comment-date">{formatDate(comment.created_at)}</span>
+                      {comment.user_id === user?.id && (
+                        <div className="comment-actions">
+                          <button
+                            className="comment-action-btn"
+                            onClick={() => { setEditingCommentId(comment.id); setEditingCommentBody(comment.body); }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="comment-action-btn comment-action-delete"
+                            onClick={() => handleDeleteComment(comment.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {editingCommentId === comment.id ? (
+                      <div className="comment-edit">
+                        <textarea
+                          value={editingCommentBody}
+                          onChange={(e) => setEditingCommentBody(e.target.value)}
+                          rows={2}
+                        />
+                        <div className="comment-edit-actions">
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditingCommentId(null)}>Cancel</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => handleUpdateComment(comment.id)}>Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="comment-text">{comment.body}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div ref={commentsEndRef} />
+            </div>
+            <form className="comment-form" onSubmit={handleAddComment}>
+              <div className="comment-input-row">
+                <div className="comment-avatar" style={{ background: user?.avatar_color || '#6366f1' }}>
+                  {user?.name?.charAt(0).toUpperCase()}
+                </div>
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Write a comment..."
+                  rows={2}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddComment(e);
+                  }}
+                />
+              </div>
+              <div className="comment-form-footer">
+                <span className="upload-hint">Cmd+Enter to submit</span>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={submittingComment || !newComment.trim()}>
+                  {submittingComment ? 'Posting...' : 'Comment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
       {lightboxUrl && (
         <ImageLightbox src={lightboxUrl} alt="Screenshot" onClose={() => setLightboxUrl(null)} />
