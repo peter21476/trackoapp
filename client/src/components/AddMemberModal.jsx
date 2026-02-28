@@ -24,7 +24,7 @@ export default function AddMemberModal({ onAdd, onClose }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Add Member</h2>
-          <button className="btn btn-icon btn-ghost" onClick={onClose}>&times;</button>
+          <button className="btn btn-icon btn-ghost btn-test" onClick={onClose}>&times;</button>
         </div>
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-error">{error}</div>}
