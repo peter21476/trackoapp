@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 import IssueCard from '../components/IssueCard';
 import IssueModal from '../components/IssueModal';
 import AddMemberModal from '../components/AddMemberModal';
@@ -15,6 +16,7 @@ const COLUMNS = [
 
 export default function ProjectBoard() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [project, setProject] = useState(null);
   const [issues, setIssues] = useState([]);
   const [members, setMembers] = useState([]);
@@ -23,6 +25,7 @@ export default function ProjectBoard() {
   const [showCreate, setShowCreate] = useState(false);
   const [createStatus, setCreateStatus] = useState('issue');
   const [showAddMember, setShowAddMember] = useState(false);
+  const [filter, setFilter] = useState('all');
 
   const fetchData = useCallback(async () => {
     try {
@@ -45,8 +48,12 @@ export default function ProjectBoard() {
     fetchData();
   }, [fetchData]);
 
+  const filteredIssues = filter === 'mine'
+    ? issues.filter((i) => i.assignee_id === user?.id)
+    : issues;
+
   const getColumnIssues = (status) =>
-    issues.filter((i) => i.status === status).sort((a, b) => a.position - b.position);
+    filteredIssues.filter((i) => i.status === status).sort((a, b) => a.position - b.position);
 
   const handleDragEnd = async (result) => {
     const { destination, source, draggableId } = result;
@@ -109,6 +116,20 @@ export default function ProjectBoard() {
           {project?.description && <p className="subtitle">{project.description}</p>}
         </div>
         <div className="board-header-right">
+          <div className="filter-toggle">
+            <button
+              className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
+              onClick={() => setFilter('all')}
+            >
+              All Issues
+            </button>
+            <button
+              className={`filter-btn ${filter === 'mine' ? 'active' : ''}`}
+              onClick={() => setFilter('mine')}
+            >
+              Assigned to Me
+            </button>
+          </div>
           <div className="members-list">
             {members.map((m) => (
               <div
