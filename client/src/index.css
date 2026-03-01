@@ -260,11 +260,14 @@ body {
 .navbar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
   text-decoration: none;
-  color: var(--text);
-  font-weight: 700;
-  font-size: 18px;
+}
+
+.brand-logo {
+  height: 80px;
+  width: auto;
+  display: block;
+  margin-top: 10px;
 }
 
 .brand-icon {
@@ -535,6 +538,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.auth-logo {
+  height: 150px;
+  width: auto;
+  margin-bottom: 12px;
 }
 
 .auth-header h1 {

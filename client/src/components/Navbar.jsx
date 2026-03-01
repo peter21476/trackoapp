@@ -27,8 +27,7 @@ export default function Navbar() {
     <nav className="navbar">
       <div className="navbar-left">
         <Link to="/" className="navbar-brand">
-          <div className="brand-icon">T</div>
-          <span>Tracko</span>
+          <img src="/tracko-logo.png" alt="Tracko" className="brand-logo" />
         </Link>
         {isProject && (
           <Link to="/" className="navbar-back">&larr; Projects</Link>

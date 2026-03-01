@@ -30,7 +30,7 @@ export default function Register() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-header">
-          <div className="brand-icon large">T</div>
+          <img src="/tracko-logo.png" alt="Tracko" className="auth-logo" />
           <h1>Create your account</h1>
           <p>Start tracking bugs with Tracko</p>
         </div>
