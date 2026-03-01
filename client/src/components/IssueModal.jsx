@@ -34,9 +34,12 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
   const [editingCommentBody, setEditingCommentBody] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
+  const [mentionState, setMentionState] = useState({ active: false, query: '', startPos: 0, target: null, rect: null, index: 0 });
   const fileInputRef = useRef(null);
   const commentsEndRef = useRef(null);
   const assigneeDropdownRef = useRef(null);
+  const newCommentRef = useRef(null);
+  const editCommentRef = useRef(null);
 
   useEffect(() => {
     if (issue) {
@@ -202,6 +205,128 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
       ' at ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const mentionMembers = mentionState.active
+    ? members.filter((m) => m.name.toLowerCase().includes(mentionState.query.toLowerCase()))
+    : [];
+
+  const getCaretCoordinates = (textarea, position) => {
+    const mirror = document.createElement('div');
+    const style = window.getComputedStyle(textarea);
+    const props = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'padding', 'border', 'boxSizing', 'whiteSpace', 'wordWrap', 'overflowWrap', 'width'];
+    props.forEach((p) => { mirror.style[p] = style[p]; });
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+
+    const text = textarea.value.substring(0, position);
+    mirror.textContent = text;
+    const marker = document.createElement('span');
+    marker.textContent = '\u200b';
+    mirror.appendChild(marker);
+    document.body.appendChild(mirror);
+
+    const rect = textarea.getBoundingClientRect();
+    const markerRect = marker.getBoundingClientRect();
+    const mirrorRect = mirror.getBoundingClientRect();
+    document.body.removeChild(mirror);
+
+    return {
+      top: rect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop,
+      left: rect.left + (markerRect.left - mirrorRect.left),
+    };
+  };
+
+  const handleCommentInput = (value, setter, textareaRef, target) => {
+    setter(value);
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const pos = textarea.selectionStart;
+    const textBefore = value.substring(0, pos);
+    const atMatch = textBefore.match(/@([^\n@]*)$/);
+    if (atMatch && (atMatch.index === 0 || /\s/.test(textBefore[atMatch.index - 1]))) {
+      const coords = getCaretCoordinates(textarea, atMatch.index);
+      setMentionState({ active: true, query: atMatch[1], startPos: atMatch.index, target, rect: coords, index: 0 });
+    } else {
+      if (mentionState.active) setMentionState({ active: false, query: '', startPos: 0, target: null, rect: null, index: 0 });
+    }
+  };
+
+  const insertMention = (member) => {
+    const isNew = mentionState.target === 'new';
+    const value = isNew ? newComment : editingCommentBody;
+    const setter = isNew ? setNewComment : setEditingCommentBody;
+    const ref = isNew ? newCommentRef : editCommentRef;
+    const before = value.substring(0, mentionState.startPos);
+    const after = value.substring(mentionState.startPos + 1 + mentionState.query.length);
+    const inserted = `@${member.name} `;
+    setter(before + inserted + after);
+    setMentionState({ active: false, query: '', startPos: 0, target: null, rect: null, index: 0 });
+    setTimeout(() => {
+      const ta = ref.current;
+      if (ta) {
+        const cursorPos = before.length + inserted.length;
+        ta.selectionStart = cursorPos;
+        ta.selectionEnd = cursorPos;
+        ta.focus();
+      }
+    }, 0);
+  };
+
+  const handleMentionKeyDown = (e) => {
+    if (!mentionState.active || mentionMembers.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setMentionState((s) => ({ ...s, index: Math.min(s.index + 1, mentionMembers.length - 1) }));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setMentionState((s) => ({ ...s, index: Math.max(s.index - 1, 0) }));
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      insertMention(mentionMembers[mentionState.index]);
+    } else if (e.key === 'Escape') {
+      setMentionState({ active: false, query: '', startPos: 0, target: null, rect: null, index: 0 });
+    }
+  };
+
+  const getMentionRegex = useCallback(() => {
+    const memberNames = members.map((m) => m.name);
+    const escaped = memberNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (escaped.length === 0) return null;
+    return new RegExp(`@(${escaped.join('|')})(?=\\s|$|[.,!?;:])`, 'g');
+  }, [members]);
+
+  const renderCommentBody = (text) => {
+    const regex = getMentionRegex();
+    if (!regex) return text;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      parts.push(<span key={match.index} className="mention-tag">@{match[1]}</span>);
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return parts;
+  };
+
+  const renderBackdrop = (text) => {
+    const regex = getMentionRegex();
+    if (!regex) return text + '\n';
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      parts.push(<mark key={match.index}>{match[0]}</mark>);
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    parts.push('\n');
+    return parts;
   };
 
   const handleRemoveScreenshot = async (index) => {
@@ -454,18 +579,48 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
                     </div>
                     {editingCommentId === comment.id ? (
                       <div className="comment-edit">
-                        <textarea
-                          value={editingCommentBody}
-                          onChange={(e) => setEditingCommentBody(e.target.value)}
-                          rows={2}
-                        />
+                        <div className="mention-textarea-wrapper">
+                          <div className="mention-backdrop" aria-hidden="true">{renderBackdrop(editingCommentBody)}</div>
+                          <textarea
+                            ref={editCommentRef}
+                            value={editingCommentBody}
+                            onChange={(e) => handleCommentInput(e.target.value, setEditingCommentBody, editCommentRef, 'edit')}
+                            rows={2}
+                            onScroll={(e) => {
+                              const backdrop = e.target.previousSibling;
+                              if (backdrop) backdrop.scrollTop = e.target.scrollTop;
+                            }}
+                            onKeyDown={handleMentionKeyDown}
+                          />
+                          {mentionState.active && mentionState.target === 'edit' && mentionMembers.length > 0 && (
+                            <div className="mention-dropdown" style={{ top: mentionState.rect ? mentionState.rect.top + 24 : 'auto', left: mentionState.rect?.left }}>
+                              {mentionMembers.map((m, i) => (
+                                <div
+                                  key={m.id}
+                                  className={`mention-dropdown-item ${i === mentionState.index ? 'active' : ''}`}
+                                  onMouseDown={(e) => { e.preventDefault(); insertMention(m); }}
+                                  onMouseEnter={() => setMentionState((s) => ({ ...s, index: i }))}
+                                >
+                                  {m.avatar_url ? (
+                                    <img className="mention-avatar mention-avatar-img" src={m.avatar_url} alt={m.name} />
+                                  ) : (
+                                    <div className="mention-avatar" style={{ background: m.avatar_color || '#6366f1' }}>
+                                      {m.name.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span>{m.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <div className="comment-edit-actions">
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditingCommentId(null)}>Cancel</button>
                           <button className="btn btn-primary btn-sm" onClick={() => handleUpdateComment(comment.id)}>Save</button>
                         </div>
                       </div>
                     ) : (
-                      <p className="comment-text">{comment.body}</p>
+                      <p className="comment-text">{renderCommentBody(comment.body)}</p>
                     )}
                   </div>
                 </div>
@@ -481,15 +636,45 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
                     {user?.name?.charAt(0).toUpperCase()}
                   </div>
                 )}
-                <textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Write a comment..."
-                  rows={2}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddComment(e);
-                  }}
-                />
+                <div className="mention-textarea-wrapper">
+                  <div className="mention-backdrop" aria-hidden="true">{renderBackdrop(newComment)}</div>
+                  <textarea
+                    ref={newCommentRef}
+                    value={newComment}
+                    onChange={(e) => handleCommentInput(e.target.value, setNewComment, newCommentRef, 'new')}
+                    placeholder="Write a comment... Type @ to mention"
+                    rows={2}
+                    onScroll={(e) => {
+                      const backdrop = e.target.previousSibling;
+                      if (backdrop) backdrop.scrollTop = e.target.scrollTop;
+                    }}
+                    onKeyDown={(e) => {
+                      handleMentionKeyDown(e);
+                      if (!mentionState.active && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddComment(e);
+                    }}
+                  />
+                  {mentionState.active && mentionState.target === 'new' && mentionMembers.length > 0 && (
+                    <div className="mention-dropdown" style={{ top: mentionState.rect ? mentionState.rect.top + 24 : 'auto', left: mentionState.rect?.left }}>
+                      {mentionMembers.map((m, i) => (
+                        <div
+                          key={m.id}
+                          className={`mention-dropdown-item ${i === mentionState.index ? 'active' : ''}`}
+                          onMouseDown={(e) => { e.preventDefault(); insertMention(m); }}
+                          onMouseEnter={() => setMentionState((s) => ({ ...s, index: i }))}
+                        >
+                          {m.avatar_url ? (
+                            <img className="mention-avatar mention-avatar-img" src={m.avatar_url} alt={m.name} />
+                          ) : (
+                            <div className="mention-avatar" style={{ background: m.avatar_color || '#6366f1' }}>
+                              {m.name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span>{m.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="comment-form-footer">
                 <span className="upload-hint">Cmd+Enter to submit</span>

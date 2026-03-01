@@ -1456,6 +1456,113 @@ body {
   margin-top: 8px;
 }
 
+/* ---------- MENTIONS ---------- */
+
+.mention-textarea-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.mention-textarea-wrapper textarea {
+  width: 100%;
+  background: transparent !important;
+  position: relative;
+  z-index: 2;
+}
+
+.mention-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  color: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.mention-backdrop mark {
+  color: transparent;
+  background: rgba(59, 130, 246, 0.2);
+  border-radius: 3px;
+  padding: 1px 0;
+}
+
+[data-theme="dark"] .mention-backdrop mark {
+  background: rgba(96, 165, 250, 0.25);
+}
+
+.mention-dropdown {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-height: 160px;
+  overflow-y: auto;
+  min-width: 180px;
+  animation: modal-in 100ms ease;
+}
+
+.mention-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background var(--transition);
+}
+
+.mention-dropdown-item:hover,
+.mention-dropdown-item.active {
+  background: var(--bg-hover);
+}
+
+.mention-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.mention-avatar-img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.comment-text .mention-tag,
+.mention-tag {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb !important;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+[data-theme="dark"] .comment-text .mention-tag,
+[data-theme="dark"] .mention-tag {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa !important;
+}
+
 /* ---------- LIGHTBOX ---------- */
 
 .lightbox-overlay {
