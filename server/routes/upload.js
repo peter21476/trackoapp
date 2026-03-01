@@ -44,6 +44,33 @@ router.post('/screenshot', auth, upload.single('screenshot'), async (req, res) =
   }
 });
 
+router.post('/avatar', auth, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    const b64 = Buffer.from(req.file.buffer).toString('base64');
+    const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'tracko-avatars',
+      transformation: [
+        { width: 300, height: 300, crop: 'fill', gravity: 'face' },
+        { quality: 'auto' },
+      ],
+    });
+
+    res.json({
+      url: result.secure_url,
+      public_id: result.public_id,
+    });
+  } catch (err) {
+    console.error('Avatar upload error:', err);
+    res.status(500).json({ error: 'Failed to upload avatar' });
+  }
+});
+
 router.delete('/:public_id(*)', auth, async (req, res) => {
   try {
     await cloudinary.uploader.destroy(req.params.public_id);

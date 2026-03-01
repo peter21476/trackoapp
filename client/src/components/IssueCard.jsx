@@ -39,13 +39,21 @@ export default function IssueCard({ issue, onClick }) {
         )}
         <div className="issue-card-bottom">
           <span className={`priority-badge priority-${issue.priority}`}>{issue.priority}</span>
-          {issue.assignee_name ? (
-            <div className="assignee-badge" style={{ background: issue.assignee_color || '#6366f1' }} title={issue.assignee_name}>
-              {issue.assignee_name.charAt(0).toUpperCase()}
-            </div>
-          ) : (
-            <div className="assignee-badge unassigned" title="Unassigned">?</div>
-          )}
+          <div className="assignee-badges">
+            {(issue.assignees || []).length > 0 ? (
+              issue.assignees.map((a) => (
+                a.avatar_url ? (
+                  <img key={a.id} className="assignee-badge assignee-badge-img" src={a.avatar_url} alt={a.name} title={a.name} />
+                ) : (
+                  <div key={a.id} className="assignee-badge" style={{ background: a.avatar_color || '#6366f1' }} title={a.name}>
+                    {a.name.charAt(0).toUpperCase()}
+                  </div>
+                )
+              ))
+            ) : (
+              <div className="assignee-badge unassigned" title="Unassigned">?</div>
+            )}
+          </div>
         </div>
       </div>
       {lightboxUrl && (

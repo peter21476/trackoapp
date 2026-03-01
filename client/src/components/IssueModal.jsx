@@ -23,7 +23,7 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('issue');
   const [priority, setPriority] = useState('medium');
-  const [assigneeId, setAssigneeId] = useState('');
+  const [assigneeIds, setAssigneeIds] = useState([]);
   const [screenshots, setScreenshots] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -33,8 +33,10 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const fileInputRef = useRef(null);
   const commentsEndRef = useRef(null);
+  const assigneeDropdownRef = useRef(null);
 
   useEffect(() => {
     if (issue) {
@@ -42,7 +44,7 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
       setDescription(issue.description || '');
       setStatus(issue.status);
       setPriority(issue.priority);
-      setAssigneeId(issue.assignee_id || '');
+      setAssigneeIds((issue.assignees || []).map((a) => a.id));
       setScreenshots(issue.screenshots || []);
     } else {
       setStatus(defaultStatus || 'issue');
@@ -141,6 +143,16 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
     return () => document.removeEventListener('paste', handlePaste);
   }, [uploadBlob]);
 
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(e.target)) {
+        setAssigneeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   // Load comments when editing an existing issue
   useEffect(() => {
     if (issue?.id) {
@@ -213,7 +225,7 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
         description,
         status,
         priority,
-        assignee_id: assigneeId || null,
+        assignee_ids: assigneeIds,
         screenshots: screenshots.map((s) => ({ url: s.url, public_id: s.public_id })),
       });
     } finally {
@@ -309,7 +321,7 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
             </div>
             <span className="upload-hint">Or paste from clipboard (Cmd+V / Ctrl+V)</span>
           </div>
-          <div className="form-row">
+          <div className="form-row form-row-2">
             <div className="form-group">
               <label htmlFor="issue-status">Status</label>
               <select id="issue-status" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -326,15 +338,71 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
                 ))}
               </select>
             </div>
-            <div className="form-group">
-              <label htmlFor="issue-assignee">Assignee</label>
-              <select id="issue-assignee" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                <option value="">Unassigned</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </div>
+          </div>
+          <div className="form-group">
+              <label>Assignees</label>
+              <div className="assignee-select-wrapper" ref={assigneeDropdownRef}>
+                <div className="assignee-select-trigger" onClick={() => setAssigneeDropdownOpen(!assigneeDropdownOpen)}>
+                  {assigneeIds.length > 0 ? (
+                    <div className="assignee-selected-tags">
+                      {assigneeIds.map((id) => {
+                        const m = members.find((mem) => mem.id === id);
+                        if (!m) return null;
+                        return (
+                          <span key={id} className="assignee-tag">
+                            {m.avatar_url ? (
+                              <img className="assignee-tag-avatar assignee-tag-avatar-img" src={m.avatar_url} alt={m.name} />
+                            ) : (
+                              <span className="assignee-tag-avatar" style={{ background: m.avatar_color || '#6366f1' }}>
+                                {m.name.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                            {m.name}
+                            <button
+                              type="button"
+                              className="assignee-tag-remove"
+                              onClick={(e) => { e.stopPropagation(); setAssigneeIds((prev) => prev.filter((i) => i !== id)); }}
+                            >
+                              &times;
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span className="assignee-placeholder">Select assignees...</span>
+                  )}
+                  <span className="assignee-arrow">{assigneeDropdownOpen ? '\u25B2' : '\u25BC'}</span>
+                </div>
+                {assigneeDropdownOpen && (
+                  <div className="assignee-dropdown">
+                    {members.map((m) => {
+                      const selected = assigneeIds.includes(m.id);
+                      return (
+                        <div
+                          key={m.id}
+                          className={`assignee-dropdown-item ${selected ? 'selected' : ''}`}
+                          onClick={() =>
+                            setAssigneeIds((prev) =>
+                              selected ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                            )
+                          }
+                        >
+                          {m.avatar_url ? (
+                            <img className="assignee-chip-avatar assignee-chip-avatar-img" src={m.avatar_url} alt={m.name} />
+                          ) : (
+                            <div className="assignee-chip-avatar" style={{ background: m.avatar_color || '#6366f1' }}>
+                              {m.name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="assignee-dropdown-name">{m.name}</span>
+                          {selected && <span className="assignee-check">&#10003;</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
           </div>
           <div className="modal-actions">
             {issue && (
@@ -356,9 +424,13 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
               )}
               {comments.map((comment) => (
                 <div key={comment.id} className="comment">
-                  <div className="comment-avatar" style={{ background: comment.user_color || '#6366f1' }}>
-                    {comment.user_name?.charAt(0).toUpperCase()}
-                  </div>
+                  {comment.user_avatar_url ? (
+                    <img className="comment-avatar comment-avatar-img" src={comment.user_avatar_url} alt={comment.user_name} />
+                  ) : (
+                    <div className="comment-avatar" style={{ background: comment.user_color || '#6366f1' }}>
+                      {comment.user_name?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div className="comment-body">
                     <div className="comment-header">
                       <span className="comment-author">{comment.user_name}</span>
@@ -402,9 +474,13 @@ export default function IssueModal({ issue, members, onSave, onDelete, onClose, 
             </div>
             <form className="comment-form" onSubmit={handleAddComment}>
               <div className="comment-input-row">
-                <div className="comment-avatar" style={{ background: user?.avatar_color || '#6366f1' }}>
-                  {user?.name?.charAt(0).toUpperCase()}
-                </div>
+                {user?.avatar_url ? (
+                  <img className="comment-avatar comment-avatar-img" src={user.avatar_url} alt={user.name} />
+                ) : (
+                  <div className="comment-avatar" style={{ background: user?.avatar_color || '#6366f1' }}>
+                    {user?.name?.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <textarea
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}

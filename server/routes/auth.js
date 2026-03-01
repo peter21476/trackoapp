@@ -24,7 +24,7 @@ router.post('/register', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     const result = await db.query(
-      'INSERT INTO users (name, email, password_hash, avatar_color) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar_color',
+      'INSERT INTO users (name, email, password_hash, avatar_color) VALUES ($1, $2, $3, $4) RETURNING id, name, email, avatar_color, avatar_url',
       [name, email, hash, avatarColor]
     );
 
@@ -61,7 +61,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token,
-      user: { id: user.id, name: user.name, email: user.email, avatar_color: user.avatar_color },
+      user: { id: user.id, name: user.name, email: user.email, avatar_color: user.avatar_color, avatar_url: user.avatar_url },
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -72,13 +72,59 @@ router.post('/login', async (req, res) => {
 router.get('/me', auth, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, name, email, avatar_color, created_at FROM users WHERE id = $1',
+      'SELECT id, name, email, avatar_color, avatar_url, avatar_public_id, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Get me error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/profile', auth, async (req, res) => {
+  try {
+    const { name, avatar_url, avatar_public_id } = req.body;
+    const userId = req.user.id;
+
+    const current = await db.query('SELECT avatar_public_id FROM users WHERE id = $1', [userId]);
+
+    const setClauses = [];
+    const values = [];
+    let idx = 1;
+
+    if (name !== undefined) {
+      setClauses.push(`name = $${idx++}`);
+      values.push(name);
+    }
+    if (avatar_url !== undefined) {
+      setClauses.push(`avatar_url = $${idx++}`);
+      values.push(avatar_url);
+      setClauses.push(`avatar_public_id = $${idx++}`);
+      values.push(avatar_public_id || null);
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    values.push(userId);
+    const result = await db.query(
+      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${idx} RETURNING id, name, email, avatar_color, avatar_url, avatar_public_id, created_at`,
+      values
+    );
+
+    if (avatar_url !== undefined && current.rows[0]?.avatar_public_id && current.rows[0].avatar_public_id !== avatar_public_id) {
+      try {
+        const cloudinary = require('../config/cloudinary');
+        await cloudinary.uploader.destroy(current.rows[0].avatar_public_id);
+      } catch (_) {}
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Update profile error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

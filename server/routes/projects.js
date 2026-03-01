@@ -117,7 +117,7 @@ router.delete('/:id', auth, async (req, res) => {
 router.get('/:id/members', auth, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT u.id, u.name, u.email, u.avatar_color, pm.role
+      `SELECT u.id, u.name, u.email, u.avatar_color, u.avatar_url, pm.role
        FROM project_members pm
        JOIN users u ON pm.user_id = u.id
        WHERE pm.project_id = $1

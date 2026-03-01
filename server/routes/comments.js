@@ -16,7 +16,7 @@ router.get('/issue/:issueId', auth, async (req, res) => {
     if (membership.rows.length === 0) return res.status(403).json({ error: 'Not a member' });
 
     const result = await db.query(
-      `SELECT c.*, u.name AS user_name, u.avatar_color AS user_color
+      `SELECT c.*, u.name AS user_name, u.avatar_color AS user_color, u.avatar_url AS user_avatar_url
        FROM issue_comments c
        JOIN users u ON c.user_id = u.id
        WHERE c.issue_id = $1
@@ -53,7 +53,7 @@ router.post('/', auth, async (req, res) => {
     );
 
     const enriched = await db.query(
-      `SELECT c.*, u.name AS user_name, u.avatar_color AS user_color
+      `SELECT c.*, u.name AS user_name, u.avatar_color AS user_color, u.avatar_url AS user_avatar_url
        FROM issue_comments c
        JOIN users u ON c.user_id = u.id
        WHERE c.id = $1`,
@@ -85,7 +85,7 @@ router.put('/:id', auth, async (req, res) => {
     );
 
     const enriched = await db.query(
-      `SELECT c.*, u.name AS user_name, u.avatar_color AS user_color
+      `SELECT c.*, u.name AS user_name, u.avatar_color AS user_color, u.avatar_url AS user_avatar_url
        FROM issue_comments c
        JOIN users u ON c.user_id = u.id
        WHERE c.id = $1`,

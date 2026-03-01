@@ -29,6 +29,28 @@ async function attachScreenshots(issues) {
   return issues.map((i) => ({ ...i, screenshots: map[i.id] || [] }));
 }
 
+async function attachAssignees(issues) {
+  if (issues.length === 0) return issues;
+
+  const ids = issues.map((i) => i.id);
+  const result = await db.query(
+    `SELECT ia.issue_id, u.id, u.name, u.email, u.avatar_color, u.avatar_url
+     FROM issue_assignees ia
+     JOIN users u ON ia.user_id = u.id
+     WHERE ia.issue_id = ANY($1)
+     ORDER BY ia.created_at ASC`,
+    [ids]
+  );
+
+  const map = {};
+  for (const a of result.rows) {
+    if (!map[a.issue_id]) map[a.issue_id] = [];
+    map[a.issue_id].push(a);
+  }
+
+  return issues.map((i) => ({ ...i, assignees: map[i.id] || [] }));
+}
+
 async function syncScreenshots(issueId, screenshots) {
   if (!screenshots) return;
 
@@ -40,13 +62,11 @@ async function syncScreenshots(issueId, screenshots) {
   const incomingPublicIds = new Set(screenshots.map((s) => s.public_id));
   const existingPublicIds = new Set(existing.rows.map((s) => s.public_id));
 
-  // Delete removed
   const toDelete = existing.rows.filter((s) => !incomingPublicIds.has(s.public_id));
   for (const s of toDelete) {
     await db.query('DELETE FROM issue_screenshots WHERE id = $1', [s.id]);
   }
 
-  // Insert new
   const toInsert = screenshots.filter((s) => !existingPublicIds.has(s.public_id));
   for (const s of toInsert) {
     await db.query(
@@ -56,14 +76,42 @@ async function syncScreenshots(issueId, screenshots) {
   }
 }
 
-const ENRICH_QUERY = `
-  SELECT i.*,
-    u_assignee.name AS assignee_name, u_assignee.avatar_color AS assignee_color,
-    u_reporter.name AS reporter_name
-  FROM issues i
-  LEFT JOIN users u_assignee ON i.assignee_id = u_assignee.id
-  LEFT JOIN users u_reporter ON i.reporter_id = u_reporter.id
-  WHERE i.id = $1`;
+async function syncAssignees(issueId, assigneeIds) {
+  if (!assigneeIds) return;
+
+  const existing = await db.query(
+    'SELECT user_id FROM issue_assignees WHERE issue_id = $1',
+    [issueId]
+  );
+
+  const incoming = new Set(assigneeIds.map(Number));
+  const current = new Set(existing.rows.map((r) => r.user_id));
+
+  for (const uid of current) {
+    if (!incoming.has(uid)) {
+      await db.query('DELETE FROM issue_assignees WHERE issue_id = $1 AND user_id = $2', [issueId, uid]);
+    }
+  }
+
+  for (const uid of incoming) {
+    if (!current.has(uid)) {
+      await db.query('INSERT INTO issue_assignees (issue_id, user_id) VALUES ($1, $2)', [issueId, uid]);
+    }
+  }
+}
+
+async function enrichIssue(issueId) {
+  const result = await db.query(
+    `SELECT i.*, u_reporter.name AS reporter_name
+     FROM issues i
+     LEFT JOIN users u_reporter ON i.reporter_id = u_reporter.id
+     WHERE i.id = $1`,
+    [issueId]
+  );
+  let issues = await attachScreenshots(result.rows);
+  issues = await attachAssignees(issues);
+  return issues[0];
+}
 
 router.get('/project/:projectId', auth, async (req, res) => {
   try {
@@ -73,18 +121,16 @@ router.get('/project/:projectId', auth, async (req, res) => {
     }
 
     const result = await db.query(
-      `SELECT i.*, 
-        u_assignee.name AS assignee_name, u_assignee.avatar_color AS assignee_color,
-        u_reporter.name AS reporter_name
+      `SELECT i.*, u_reporter.name AS reporter_name
        FROM issues i
-       LEFT JOIN users u_assignee ON i.assignee_id = u_assignee.id
        LEFT JOIN users u_reporter ON i.reporter_id = u_reporter.id
        WHERE i.project_id = $1
        ORDER BY i.position ASC, i.created_at DESC`,
       [req.params.projectId]
     );
 
-    const issues = await attachScreenshots(result.rows);
+    let issues = await attachScreenshots(result.rows);
+    issues = await attachAssignees(issues);
     res.json(issues);
   } catch (err) {
     console.error('Get issues error:', err);
@@ -94,7 +140,7 @@ router.get('/project/:projectId', auth, async (req, res) => {
 
 router.post('/', auth, async (req, res) => {
   try {
-    const { project_id, title, description, priority, assignee_id, status, screenshots } = req.body;
+    const { project_id, title, description, priority, assignee_ids, status, screenshots } = req.body;
 
     if (!project_id || !title) {
       return res.status(400).json({ error: 'Project and title are required' });
@@ -111,8 +157,8 @@ router.post('/', auth, async (req, res) => {
     );
 
     const result = await db.query(
-      `INSERT INTO issues (project_id, title, description, status, priority, assignee_id, reporter_id, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO issues (project_id, title, description, status, priority, reporter_id, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         project_id,
@@ -120,7 +166,6 @@ router.post('/', auth, async (req, res) => {
         description || '',
         status || 'issue',
         priority || 'medium',
-        assignee_id || null,
         req.user.id,
         posResult.rows[0].next_pos,
       ]
@@ -128,14 +173,15 @@ router.post('/', auth, async (req, res) => {
 
     const issue = result.rows[0];
 
+    if (assignee_ids && assignee_ids.length > 0) {
+      await syncAssignees(issue.id, assignee_ids);
+    }
     if (screenshots && screenshots.length > 0) {
       await syncScreenshots(issue.id, screenshots);
     }
 
-    const enriched = await db.query(ENRICH_QUERY, [issue.id]);
-    const withScreenshots = await attachScreenshots(enriched.rows);
-
-    res.status(201).json(withScreenshots[0]);
+    const enriched = await enrichIssue(issue.id);
+    res.status(201).json(enriched);
   } catch (err) {
     console.error('Create issue error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -144,7 +190,7 @@ router.post('/', auth, async (req, res) => {
 
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { title, description, status, priority, assignee_id, screenshots } = req.body;
+    const { title, description, status, priority, assignee_ids, screenshots } = req.body;
 
     const issueResult = await db.query('SELECT * FROM issues WHERE id = $1', [req.params.id]);
     if (issueResult.rows.length === 0) return res.status(404).json({ error: 'Issue not found' });
@@ -161,24 +207,20 @@ router.put('/:id', auth, async (req, res) => {
         description = COALESCE($2, description),
         status = COALESCE($3, status),
         priority = COALESCE($4, priority),
-        assignee_id = $5,
         updated_at = NOW()
-       WHERE id = $6`,
-      [
-        title, description, status, priority,
-        assignee_id === undefined ? issue.assignee_id : assignee_id,
-        req.params.id,
-      ]
+       WHERE id = $5`,
+      [title, description, status, priority, req.params.id]
     );
 
+    if (assignee_ids !== undefined) {
+      await syncAssignees(req.params.id, assignee_ids);
+    }
     if (screenshots !== undefined) {
       await syncScreenshots(req.params.id, screenshots);
     }
 
-    const enriched = await db.query(ENRICH_QUERY, [req.params.id]);
-    const withScreenshots = await attachScreenshots(enriched.rows);
-
-    res.json(withScreenshots[0]);
+    const enriched = await enrichIssue(req.params.id);
+    res.json(enriched);
   } catch (err) {
     console.error('Update issue error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -203,10 +245,8 @@ router.patch('/:id/move', auth, async (req, res) => {
       [status, position, req.params.id]
     );
 
-    const enriched = await db.query(ENRICH_QUERY, [req.params.id]);
-    const withScreenshots = await attachScreenshots(enriched.rows);
-
-    res.json(withScreenshots[0]);
+    const enriched = await enrichIssue(req.params.id);
+    res.json(enriched);
   } catch (err) {
     console.error('Move issue error:', err);
     res.status(500).json({ error: 'Server error' });

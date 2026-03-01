@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import ProfileModal from './ProfileModal';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -9,6 +10,7 @@ export default function Navbar() {
   const location = useLocation();
   const isProject = location.pathname.startsWith('/project/');
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -74,12 +76,19 @@ export default function Navbar() {
             </div>
           )}
         </div>
-        <div className="user-badge" style={{ background: user?.avatar_color || '#6366f1' }}>
-          {user?.name?.charAt(0).toUpperCase()}
-        </div>
+        <button className="navbar-avatar-btn" onClick={() => { setShowProfile(true); setShowSettings(false); }}>
+          {user?.avatar_url ? (
+            <img src={user.avatar_url} alt={user.name} className="navbar-avatar-img" />
+          ) : (
+            <div className="user-badge" style={{ background: user?.avatar_color || '#6366f1' }}>
+              {user?.name?.charAt(0).toUpperCase()}
+            </div>
+          )}
+        </button>
         <span className="user-name">{user?.name}</span>
         <button onClick={logout} className="btn btn-ghost">Logout</button>
       </div>
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
     </nav>
   );
 }

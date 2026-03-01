@@ -49,7 +49,7 @@ export default function ProjectBoard() {
   }, [fetchData]);
 
   const filteredIssues = filter === 'mine'
-    ? issues.filter((i) => i.assignee_id === user?.id)
+    ? issues.filter((i) => (i.assignees || []).some((a) => a.id === user?.id))
     : issues;
 
   const getColumnIssues = (status) =>
